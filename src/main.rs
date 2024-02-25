@@ -1,42 +1,22 @@
-use esp_idf_svc::hal::{
-    delay,
-    i2c::{I2cConfig, I2cDriver},
-    peripherals::Peripherals,
-    prelude::*,
-};
-
-use bme280::i2c::BME280;
+use esp_idf_svc::hal::{delay, gpio::PinDriver, peripherals::Peripherals};
+use loadcell::{hx711::HX711, LoadCell};
 
 fn main() {
-    // It is necessary to call this function once. Otherwise some patches to the runtime
-    // implemented by esp-idf-sys might not link properly. See https://github.com/esp-rs/esp-idf-template/issues/71
     esp_idf_svc::sys::link_patches();
-
-    // Bind the log crate to the ESP Logging facilities
     esp_idf_svc::log::EspLogger::initialize_default();
 
     let peripherals = Peripherals::take().unwrap();
-    let sda = peripherals.pins.gpio2;
-    let scl = peripherals.pins.gpio3;
-    let config = I2cConfig::new().baudrate(400.kHz().into());
-    let i2c = I2cDriver::new(peripherals.i2c0, sda, scl, &config).unwrap();
-    let mut bme280 = BME280::new_primary(i2c);
-    let mut delay = delay::FreeRtos;
+    let dt = PinDriver::input(peripherals.pins.gpio0).unwrap();
+    let sck = PinDriver::output(peripherals.pins.gpio10).unwrap();
+    let mut load_sensor = HX711::new(sck, dt, delay::FreeRtos);
 
-    match bme280.init(&mut delay) {
-        Ok(_) => log::info!("Successfully initialized BME280 device"),
-        Err(_) => log::error!("Failed to initialize BME280 device"),
-    }
+    load_sensor.tare(16);
+    load_sensor.set_scale(1.0);
 
     loop {
-        match bme280.measure(&mut delay) {
-            Ok(measurements) => {
-                log::info!("Relative Humidity = {:.0}%", measurements.humidity);
-                log::info!("Temperature = {:.0}°C", measurements.temperature);
-                log::info!("Pressure = {:,.0} Pa", measurements.pressure);
-            }
-
-            Err(e) => log::error!("Failed to get measurements: {:?}", e),
+        if load_sensor.is_ready() {
+            let reading = load_sensor.read_scaled();
+            log::info!("Last Reading = {:?}", reading);
         }
 
         delay::FreeRtos::delay_ms(1000u32);
