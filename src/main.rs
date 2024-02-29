@@ -1,4 +1,9 @@
-use esp_idf_svc::hal::{delay, gpio::PinDriver, peripherals::Peripherals};
+use esp_idf_svc::hal::{
+    delay::{Delay, FreeRtos},
+    gpio::PinDriver,
+    peripherals::Peripherals,
+};
+
 use loadcell::{hx711::HX711, LoadCell};
 
 fn main() {
@@ -6,12 +11,13 @@ fn main() {
     esp_idf_svc::log::EspLogger::initialize_default();
 
     let peripherals = Peripherals::take().unwrap();
-    let dt = PinDriver::input(peripherals.pins.gpio0).unwrap();
-    let sck = PinDriver::output(peripherals.pins.gpio10).unwrap();
-    let mut load_sensor = HX711::new(sck, dt, delay::FreeRtos);
+    let dt = PinDriver::input(peripherals.pins.gpio2).unwrap();
+    let sck = PinDriver::output(peripherals.pins.gpio3).unwrap();
+    let delay = Delay::new_default();
+    let mut load_sensor = HX711::new(sck, dt, delay);
 
     load_sensor.tare(16);
-    load_sensor.set_scale(1.0);
+    load_sensor.set_scale(0.0028);
 
     loop {
         if load_sensor.is_ready() {
@@ -19,6 +25,6 @@ fn main() {
             log::info!("Last Reading = {:?}", reading);
         }
 
-        delay::FreeRtos::delay_ms(1000u32);
+        FreeRtos::delay_ms(100u32);
     }
 }
