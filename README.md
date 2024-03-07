@@ -1,4 +1,4 @@
-# Rust ESP32-C3 BME280
+# Rust ESP32-C3 HX711
 
 Example of reading the HX711 24-bit analog-to-digital converter and a load cell sensor on an ESP32-C3 using Rust
 
