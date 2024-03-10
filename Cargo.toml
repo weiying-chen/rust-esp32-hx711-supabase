@@ -29,6 +29,7 @@ log = { version = "0.4", default-features = false }
 esp-idf-svc = { version = "0.48", default-features = false }
 loadcell = "0.2.0"
 critical-section = "1.0"
+anyhow = "1.0.80"
 
 [build-dependencies]
 embuild = "0.31.3"

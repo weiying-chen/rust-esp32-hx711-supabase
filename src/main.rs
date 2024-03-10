@@ -1,8 +1,10 @@
+use anyhow::Result;
 use std::collections::VecDeque;
 
 use esp_idf_svc::hal::{
-    delay::{Delay, Ets, FreeRtos},
-    gpio::{Gpio2, Gpio3, Input, Output, PinDriver},
+    delay::{Ets, FreeRtos},
+    gpio::{Input, InputPin, Output, OutputPin, Pin, PinDriver},
+    peripheral::Peripheral,
     peripherals::Peripherals,
 };
 
@@ -16,20 +18,35 @@ mod critical_section;
 const LOADCELL_STABLE_READINGS: usize = 10; // Number of readings to consider for stability
 const LOADCELL_LOOP_DELAY_US: u32 = 10000; // Delay between readings in microseconds
                                            // const LOADCELL_READY_DELAY_US: u32 = 1000;
-pub type LoadCellAmp<'a> = HX711<PinDriver<'a, Gpio2, Output>, PinDriver<'a, Gpio3, Input>, Delay>;
+const LOADCELL_SCALING: f32 = 0.0027;
 
-pub struct LoadSensor<'a> {
-    load_sensor: LoadCellAmp<'a>,
+pub type LoadSensor<'a, SckPin, DtPin> =
+    HX711<PinDriver<'a, SckPin, Output>, PinDriver<'a, DtPin, Input>, Ets>;
+
+/// Loadcell struct
+pub struct Loadcell<'a, SckPin, DtPin>
+where
+    DtPin: Peripheral<P = DtPin> + Pin + InputPin,
+    SckPin: Peripheral<P = SckPin> + Pin + OutputPin,
+{
+    load_sensor: LoadSensor<'a, SckPin, DtPin>,
 }
 
-impl<'a> LoadSensor<'a> {
-    pub fn new(gpio_sck: Gpio3, gpio_dt: Gpio2) -> Self {
-        let dt = PinDriver::input(gpio_sck).unwrap();
-        let sck = PinDriver::output(gpio_dt).unwrap();
-        let delay = Delay::new_default();
-        let load_sensor = HX711::new(sck, dt, delay);
+impl<'a, SckPin, DtPin> Loadcell<'a, SckPin, DtPin>
+where
+    DtPin: Peripheral<P = DtPin> + Pin + InputPin,
+    SckPin: Peripheral<P = SckPin> + Pin + OutputPin,
+{
+    pub fn new(clock_pin: SckPin, data_pin: DtPin) -> Result<Self> {
+        let dt = PinDriver::input(data_pin)?;
+        let sck = PinDriver::output(clock_pin)?;
+        // let delay = Delay::new_default();
+        let mut load_sensor = HX711::new(sck, dt, Ets);
 
-        LoadSensor { load_sensor }
+        // TODO: pass this as an argument
+        load_sensor.set_scale(LOADCELL_SCALING);
+
+        Ok(Loadcell { load_sensor })
     }
 
     // Delegate to HX711::is_ready
@@ -100,7 +117,7 @@ fn main() {
     let dt = peripherals.pins.gpio2;
     let sck = peripherals.pins.gpio3;
 
-    let mut load_sensor = LoadSensor::new(sck, dt);
+    let mut load_sensor = Loadcell::new(sck, dt).unwrap();
     // let dt = PinDriver::input(peripherals.pins.gpio2).unwrap();
     // let sck = PinDriver::output(peripherals.pins.gpio3).unwrap();
     // let delay = Delay::new_default();
@@ -110,7 +127,7 @@ fn main() {
     // load_sensor.tare(16);
     // load_sensor.set_scale(1.0);
     // load_sensor.set_scale(0.0043);
-    load_sensor.set_scale(0.0027);
+    // load_sensor.set_scale(0.0027);
     load_sensor.wait_stable();
     load_sensor.tare(32);
 
