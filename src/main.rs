@@ -24,7 +24,7 @@ pub type LoadSensor<'a, SckPin, DtPin> =
     HX711<PinDriver<'a, SckPin, Output>, PinDriver<'a, DtPin, Input>, Ets>;
 
 /// Loadcell struct
-pub struct Loadcell<'a, SckPin, DtPin>
+pub struct Scale<'a, SckPin, DtPin>
 where
     DtPin: Peripheral<P = DtPin> + Pin + InputPin,
     SckPin: Peripheral<P = SckPin> + Pin + OutputPin,
@@ -32,7 +32,7 @@ where
     load_sensor: LoadSensor<'a, SckPin, DtPin>,
 }
 
-impl<'a, SckPin, DtPin> Loadcell<'a, SckPin, DtPin>
+impl<'a, SckPin, DtPin> Scale<'a, SckPin, DtPin>
 where
     DtPin: Peripheral<P = DtPin> + Pin + InputPin,
     SckPin: Peripheral<P = SckPin> + Pin + OutputPin,
@@ -40,36 +40,29 @@ where
     pub fn new(clock_pin: SckPin, data_pin: DtPin) -> Result<Self> {
         let dt = PinDriver::input(data_pin)?;
         let sck = PinDriver::output(clock_pin)?;
-        // let delay = Delay::new_default();
         let mut load_sensor = HX711::new(sck, dt, Ets);
 
-        // TODO: pass this as an argument
         load_sensor.set_scale(LOADCELL_SCALING);
 
-        Ok(Loadcell { load_sensor })
+        Ok(Scale { load_sensor })
     }
 
-    // Delegate to HX711::is_ready
     pub fn is_ready(&self) -> bool {
         self.load_sensor.is_ready()
     }
 
-    // Delegate to HX711::set_scale
     pub fn set_scale(&mut self, scale: f32) {
         self.load_sensor.set_scale(scale);
     }
 
-    // Delegate to HX711::tare
     pub fn tare(&mut self, times: usize) {
         self.load_sensor.tare(times);
     }
 
-    // Delegate to HX711::read_scaled
     pub fn read_scaled(&mut self) -> Result<f32, NotReadyError> {
         self.load_sensor.read_scaled()
     }
 
-    // Optionally, delegate to HX711::read for raw readings useful in calibration
     pub fn read(&mut self) -> Result<i32, NotReadyError> {
         self.load_sensor.read()
     }
@@ -79,7 +72,6 @@ where
 
         loop {
             while !self.load_sensor.is_ready() {
-                // Use your specific delay function here, adjusted for your RTOS/environment
                 FreeRtos::delay_ms(10);
             }
 
@@ -105,8 +97,6 @@ where
             Ets::delay_us(LOADCELL_LOOP_DELAY_US);
         }
     }
-
-    // Add other methods as needed, directly utilizing `load_sensor`'s methods.
 }
 
 fn main() {
@@ -117,23 +107,13 @@ fn main() {
     let dt = peripherals.pins.gpio2;
     let sck = peripherals.pins.gpio3;
 
-    let mut load_sensor = Loadcell::new(sck, dt).unwrap();
-    // let dt = PinDriver::input(peripherals.pins.gpio2).unwrap();
-    // let sck = PinDriver::output(peripherals.pins.gpio3).unwrap();
-    // let delay = Delay::new_default();
-
-    // let mut load_sensor = HX711::new(sck, dt, delay);
-
-    // load_sensor.tare(16);
-    // load_sensor.set_scale(1.0);
-    // load_sensor.set_scale(0.0043);
-    // load_sensor.set_scale(0.0027);
-    load_sensor.wait_stable();
-    load_sensor.tare(32);
+    let mut scale = Scale::new(sck, dt).unwrap();
+    scale.wait_stable();
+    scale.tare(32);
 
     loop {
-        if load_sensor.is_ready() {
-            let reading = load_sensor.read_scaled().unwrap();
+        if scale.is_ready() {
+            let reading = scale.read_scaled().unwrap();
             // let reading = load_sensor.read().unwrap(); // Use this one to calibrate the load cell
             // log::info!("Weight: {:.0} g", reading);
             let rounded_reading = if reading.round() == -0f32 {
