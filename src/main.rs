@@ -4,6 +4,8 @@ use esp_idf_svc::hal::{delay::FreeRtos, peripherals::Peripherals};
 mod critical_section;
 mod scale;
 
+const LOAD_SENSOR_SCALING: f32 = 0.0027;
+
 fn main() {
     esp_idf_svc::sys::link_patches();
     esp_idf_svc::log::EspLogger::initialize_default();
@@ -12,7 +14,7 @@ fn main() {
     let dt = peripherals.pins.gpio2;
     let sck = peripherals.pins.gpio3;
 
-    let mut scale = Scale::new(sck, dt).unwrap();
+    let mut scale = Scale::new(sck, dt, LOAD_SENSOR_SCALING).unwrap();
     scale.wait_stable();
     scale.tare(32);
 
