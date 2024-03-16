@@ -1,30 +1,66 @@
-use crate::scale::Scale;
-use esp_idf_svc::hal::{delay::FreeRtos, peripherals::Peripherals};
+//! Example of using blocking wifi.
+//!
+//! Add your own ssid and password
 
-mod critical_section;
-mod scale;
+use embedded_svc::wifi::{AuthMethod, ClientConfiguration, Configuration};
+use esp_idf_hal::prelude::Peripherals;
+use esp_idf_hal::sys::esp_wifi_set_max_tx_power;
+use esp_idf_svc::log::EspLogger;
+use esp_idf_svc::wifi::{BlockingWifi, EspWifi};
+use esp_idf_svc::{eventloop::EspSystemEventLoop, nvs::EspDefaultNvsPartition};
+// use esp_idf_sys::{self as _}; // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
+use log::info;
 
-const LOAD_SENSOR_SCALING: f32 = 0.0027;
+const SSID: &str = env!("WIFI_SSID");
+const PASSWORD: &str = env!("WIFI_PASS");
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     esp_idf_svc::sys::link_patches();
-    esp_idf_svc::log::EspLogger::initialize_default();
+    EspLogger::initialize_default();
 
     let peripherals = Peripherals::take().unwrap();
-    let dt = peripherals.pins.gpio2;
-    let sck = peripherals.pins.gpio3;
+    let sys_loop = EspSystemEventLoop::take()?;
+    let nvs = EspDefaultNvsPartition::take()?;
 
-    let mut scale = Scale::new(sck, dt, LOAD_SENSOR_SCALING).unwrap();
-    scale.wait_stable();
-    scale.tare(32);
+    let mut wifi = BlockingWifi::wrap(
+        EspWifi::new(peripherals.modem, sys_loop.clone(), Some(nvs))?,
+        sys_loop,
+    )?;
 
-    loop {
-        if scale.is_ready() {
-            let rounded_reading = scale.read_rounded().unwrap();
+    connect_wifi(&mut wifi)?;
 
-            log::info!("Weight: {} g", rounded_reading);
-        }
+    let ip_info = wifi.wifi().sta_netif().get_ip_info()?;
 
-        FreeRtos::delay_ms(1000u32);
-    }
+    info!("Wifi DHCP info: {:?}", ip_info);
+
+    info!("Shutting down in 5s...");
+
+    std::thread::sleep(core::time::Duration::from_secs(5));
+
+    Ok(())
+}
+
+fn connect_wifi(wifi: &mut BlockingWifi<EspWifi<'static>>) -> anyhow::Result<()> {
+    let wifi_configuration: Configuration = Configuration::Client(ClientConfiguration {
+        ssid: SSID.try_into().unwrap(),
+        bssid: None,
+        auth_method: AuthMethod::WPA2Personal,
+        password: PASSWORD.try_into().unwrap(),
+        channel: None,
+    });
+
+    wifi.set_configuration(&wifi_configuration)?;
+
+    wifi.start()?;
+    info!("Wifi started");
+
+    unsafe { esp_wifi_set_max_tx_power(34) };
+
+    wifi.connect()?;
+    info!("Wifi connected");
+
+    wifi.wait_netif_up()?;
+    info!("Wifi netif up");
+
+    Ok(())
 }
