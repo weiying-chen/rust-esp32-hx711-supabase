@@ -2,9 +2,13 @@
 //!
 //! Add your own ssid and password
 
-use embedded_svc::wifi::{AuthMethod, ClientConfiguration, Configuration};
+use embedded_svc::{
+    http::client::Client as HttpClient,
+    wifi::{AuthMethod, ClientConfiguration, Configuration},
+};
 use esp_idf_hal::prelude::Peripherals;
 use esp_idf_hal::sys::esp_wifi_set_max_tx_power;
+use esp_idf_svc::http::client::EspHttpConnection;
 use esp_idf_svc::log::EspLogger;
 use esp_idf_svc::wifi::{BlockingWifi, EspWifi};
 use esp_idf_svc::{eventloop::EspSystemEventLoop, nvs::EspDefaultNvsPartition};
@@ -29,14 +33,44 @@ fn main() -> anyhow::Result<()> {
 
     connect_wifi(&mut wifi)?;
 
-    let ip_info = wifi.wifi().sta_netif().get_ip_info()?;
+    let mut client = HttpClient::wrap(EspHttpConnection::new(&Default::default())?);
 
-    info!("Wifi DHCP info: {:?}", ip_info);
+    // let mut client = HttpClient::wrap(EspHttpConnection::new(&Configuration {
+    //     crt_bundle_attach: Some(esp_idf_sys::esp_crt_bundle_attach),
 
-    info!("Shutting down in 5s...");
+    //     ..Default::default()
+    // })?);
+
+    // GET
+    get_request(&mut client)?;
+
+    // let ip_info = wifi.wifi().sta_netif().get_ip_info()?;
+
+    // info!("Wifi DHCP info: {:?}", ip_info);
+
+    // info!("Shutting down in 5s...");
 
     std::thread::sleep(core::time::Duration::from_secs(5));
 
+    Ok(())
+}
+
+fn get_request(client: &mut HttpClient<EspHttpConnection>) -> anyhow::Result<()> {
+    let url = "https://httpbin.org/get";
+    let request = client.get(url)?;
+    info!("-> GET {}", url);
+    let response = request.submit()?;
+    info!("<- {}", response.status());
+
+    if let Some(content_length) = response.header("Content-Length") {
+        info!("Content-Length: {}", content_length);
+    }
+
+    if let Some(date) = response.header("Date") {
+        info!("Date: {}", date);
+    }
+
+    std::thread::sleep(core::time::Duration::from_secs(5));
     Ok(())
 }
 
