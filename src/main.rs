@@ -8,7 +8,7 @@ use embedded_svc::{
 };
 use esp_idf_hal::prelude::Peripherals;
 use esp_idf_hal::sys::esp_wifi_set_max_tx_power;
-use esp_idf_svc::http::client::EspHttpConnection;
+use esp_idf_svc::http::client::{Configuration as HttpConfiguration, EspHttpConnection};
 use esp_idf_svc::log::EspLogger;
 use esp_idf_svc::wifi::{BlockingWifi, EspWifi};
 use esp_idf_svc::{eventloop::EspSystemEventLoop, nvs::EspDefaultNvsPartition};
@@ -33,13 +33,12 @@ fn main() -> anyhow::Result<()> {
 
     connect_wifi(&mut wifi)?;
 
-    let mut client = HttpClient::wrap(EspHttpConnection::new(&Default::default())?);
+    let config = &HttpConfiguration {
+        crt_bundle_attach: Some(esp_idf_svc::sys::esp_crt_bundle_attach),
+        ..Default::default()
+    };
 
-    // let mut client = HttpClient::wrap(EspHttpConnection::new(&Configuration {
-    //     crt_bundle_attach: Some(esp_idf_sys::esp_crt_bundle_attach),
-
-    //     ..Default::default()
-    // })?);
+    let mut client = HttpClient::wrap(EspHttpConnection::new(&config)?);
 
     // GET
     get_request(&mut client)?;
