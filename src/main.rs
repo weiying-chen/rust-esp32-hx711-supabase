@@ -4,6 +4,7 @@
 
 use embedded_svc::{
     http::client::Client as HttpClient,
+    io::Write,
     wifi::{AuthMethod, ClientConfiguration, Configuration},
 };
 use esp_idf_hal::prelude::Peripherals;
@@ -34,6 +35,8 @@ fn main() -> anyhow::Result<()> {
     connect_wifi(&mut wifi)?;
 
     let config = &HttpConfiguration {
+        buffer_size: Some(1024),
+        buffer_size_tx: Some(1024),
         crt_bundle_attach: Some(esp_idf_svc::sys::esp_crt_bundle_attach),
         ..Default::default()
     };
@@ -42,6 +45,9 @@ fn main() -> anyhow::Result<()> {
 
     // GET
     get_request(&mut client)?;
+
+    // GET
+    post_request(&mut client)?;
 
     // let ip_info = wifi.wifi().sta_netif().get_ip_info()?;
 
@@ -57,8 +63,11 @@ fn main() -> anyhow::Result<()> {
 fn get_request(client: &mut HttpClient<EspHttpConnection>) -> anyhow::Result<()> {
     let url = "https://httpbin.org/get";
     let request = client.get(url)?;
+
     info!("-> GET {}", url);
+
     let response = request.submit()?;
+
     info!("<- {}", response.status());
 
     if let Some(content_length) = response.header("Content-Length") {
@@ -70,6 +79,50 @@ fn get_request(client: &mut HttpClient<EspHttpConnection>) -> anyhow::Result<()>
     }
 
     std::thread::sleep(core::time::Duration::from_secs(5));
+
+    Ok(())
+}
+
+fn post_request(client: &mut HttpClient<EspHttpConnection>) -> anyhow::Result<()> {
+    let supabase_url = "https://pratqgdulutgohggfwfo.supabase.co/rest/v1/messages";
+    let supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InByYXRxZ2R1bHV0Z29oZ2dmd2ZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MTA0Mjc1NzgsImV4cCI6MjAyNjAwMzU3OH0.miKfZwWualZGbxDZ7KQpvaOK_Rxw6mbQ_EpiPMKi318";
+    let payload = br#"{"content": "This is a message from ESP32"}"#;
+    let content_length_header = format!("{}", payload.len());
+
+    let headers = [
+        ("apikey", supabase_key),
+        ("Authorization", &format!("Bearer {}", supabase_key)),
+        ("Content-Type", "application/json"),
+        // ("Prefer", "return=representation"),
+        ("Content-Length", &content_length_header),
+    ];
+
+    let mut request = client.post(supabase_url, &headers)?;
+
+    request.write_all(payload)?;
+    request.flush()?;
+    info!("-> POST {}", supabase_url);
+
+    let response = request.submit()?;
+    let status = response.status();
+
+    info!("<- {}", status);
+
+    // let mut buf = [0u8; 1024];
+    // let bytes_read = io::try_read_full(&mut response, &mut buf).map_err(|e| e.0)?;
+    // info!("Read {} bytes", bytes_read);
+    // match std::str::from_utf8(&buf[0..bytes_read]) {
+    //     Ok(body_string) => info!(
+    //         "Response body (truncated to {} bytes): {:?}",
+    //         buf.len(),
+    //         body_string
+    //     ),
+    //     Err(e) => error!("Error decoding response body: {}", e),
+    // };
+
+    // Drain any remaining bytes in the response to complete reading
+    // while response.read(&mut buf)? > 0 {}
+
     Ok(())
 }
 
