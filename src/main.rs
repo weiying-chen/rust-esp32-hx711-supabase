@@ -9,6 +9,7 @@ use embedded_svc::{
 };
 use esp_idf_hal::prelude::Peripherals;
 use esp_idf_hal::sys::esp_wifi_set_max_tx_power;
+use esp_idf_svc::hal::delay::FreeRtos;
 use esp_idf_svc::http::client::{Configuration as HttpConfiguration, EspHttpConnection};
 use esp_idf_svc::log::EspLogger;
 use esp_idf_svc::wifi::{BlockingWifi, EspWifi};
@@ -16,8 +17,13 @@ use esp_idf_svc::{eventloop::EspSystemEventLoop, nvs::EspDefaultNvsPartition};
 // use esp_idf_sys::{self as _}; // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
 use log::info;
 
+use crate::scale::Scale;
+mod critical_section;
+mod scale;
+
 const SSID: &str = env!("WIFI_SSID");
 const PASSWORD: &str = env!("WIFI_PASS");
+const LOAD_SENSOR_SCALING: f32 = 0.0027;
 
 fn main() -> anyhow::Result<()> {
     esp_idf_svc::sys::link_patches();
@@ -46,14 +52,66 @@ fn main() -> anyhow::Result<()> {
     // GET
     get_request(&mut client)?;
 
-    // GET
-    post_request(&mut client)?;
+    // let payload = br#"{"content": "This is a message from ESP32"}"#;
+
+    // POST
+
+    // let payload = br#"{"content": "This is a message from ESP32"}"#;
+
+    // post_request(&mut client, payload)?;
+
+    let dt = peripherals.pins.gpio2;
+    let sck = peripherals.pins.gpio3;
+
+    let mut scale = Scale::new(sck, dt, LOAD_SENSOR_SCALING).unwrap();
+
+    scale.wait_stable();
+    scale.tare(32);
+
+    let mut iterations = 0;
+
+    loop {
+        if scale.is_ready() {
+            log::info!("Iteration {}", iterations);
+
+            let rounded_reading = scale.read_rounded().unwrap();
+
+            let message = format!("This is a message from ESP32: {} g", rounded_reading);
+            let payload = serde_json::json!({
+                "content": message
+            });
+
+            // Convert the JSON object to a String
+            let payload_str = serde_json::to_string(&payload).unwrap();
+
+            // `payload_str` is a `String` and needs to be converted to a byte slice (`&[u8]`) for the `post_request`
+            let payload_bytes = payload_str.as_bytes();
+
+            // Now `payload_bytes` is ready to be sent with `post_request`
+            post_request(&mut client, payload_bytes)?;
+
+            log::info!("Post request sent!");
+        }
+
+        // FreeRtos::delay_ms(1000u32);
+        FreeRtos::delay_ms(5000u32);
+        // Increment the iteration counter
+        iterations += 1;
+
+        log::info!("Iteration: {}", iterations);
+
+        // If approximately 5 seconds have passed, break the loop
+        // This is based on the assumption that each loop iteration takes roughly 2 seconds
+        if iterations >= 10 {
+            break;
+        }
+    }
 
     // let ip_info = wifi.wifi().sta_netif().get_ip_info()?;
 
     // info!("Wifi DHCP info: {:?}", ip_info);
 
-    // info!("Shutting down in 5s...");
+    info!("Shutting down in 5s...");
 
     std::thread::sleep(core::time::Duration::from_secs(5));
 
@@ -83,10 +141,9 @@ fn get_request(client: &mut HttpClient<EspHttpConnection>) -> anyhow::Result<()>
     Ok(())
 }
 
-fn post_request(client: &mut HttpClient<EspHttpConnection>) -> anyhow::Result<()> {
+fn post_request(client: &mut HttpClient<EspHttpConnection>, payload: &[u8]) -> anyhow::Result<()> {
     let supabase_url = "https://pratqgdulutgohggfwfo.supabase.co/rest/v1/messages";
     let supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InByYXRxZ2R1bHV0Z29oZ2dmd2ZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MTA0Mjc1NzgsImV4cCI6MjAyNjAwMzU3OH0.miKfZwWualZGbxDZ7KQpvaOK_Rxw6mbQ_EpiPMKi318";
-    let payload = br#"{"content": "This is a message from ESP32"}"#;
     let content_length_header = format!("{}", payload.len());
 
     let headers = [
@@ -103,10 +160,22 @@ fn post_request(client: &mut HttpClient<EspHttpConnection>) -> anyhow::Result<()
     request.flush()?;
     info!("-> POST {}", supabase_url);
 
-    let response = request.submit()?;
-    let status = response.status();
+    // let response = request.submit()?;
+    // let status = response.status();
 
-    info!("<- {}", status);
+    match request.submit() {
+        Ok(response) => {
+            let status = response.status();
+            info!("<- HTTP Status: {}", status);
+            // If possible, log body or additional response info
+        }
+        Err(e) => {
+            info!("Error sending POST request: {:?}", e);
+            // Depending on the error, you might decide to retry here
+        }
+    }
+
+    // info!("<- {}", status);
 
     // let mut buf = [0u8; 1024];
     // let bytes_read = io::try_read_full(&mut response, &mut buf).map_err(|e| e.0)?;
