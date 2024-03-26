@@ -2,8 +2,6 @@
 //!
 //! Add your own ssid and password
 
-use std::{thread, time::Duration};
-
 use embedded_svc::{
     http::client::Client as HttpClient,
     io::Write,
@@ -47,7 +45,6 @@ fn main() -> anyhow::Result<()> {
         buffer_size: Some(1024),
         buffer_size_tx: Some(1024),
         crt_bundle_attach: Some(esp_idf_svc::sys::esp_crt_bundle_attach),
-        timeout: Some(Duration::from_secs(10)),
         ..Default::default()
     };
 
@@ -94,12 +91,10 @@ fn main() -> anyhow::Result<()> {
             // Now `payload_bytes` is ready to be sent with `post_request`
             // post_request(&mut client, payload_bytes)?;
             post_request_with_retry(&mut client, payload_bytes, &config)?;
-
-            log::info!("Post request sent!");
         }
 
         // FreeRtos::delay_ms(1000u32);
-        FreeRtos::delay_ms(5000u32);
+        FreeRtos::delay_ms(10000u32);
         // Increment the iteration counter
         iterations += 1;
 
@@ -209,7 +204,6 @@ fn post_request_with_retry(
 ) -> anyhow::Result<()> {
     let mut retries = 0;
     let max_retries = 3; // Maximum number of retries
-
     let supabase_url = "https://pratqgdulutgohggfwfo.supabase.co/rest/v1/messages";
     let supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InByYXRxZ2R1bHV0Z29oZ2dmd2ZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MTA0Mjc1NzgsImV4cCI6MjAyNjAwMzU3OH0.miKfZwWualZGbxDZ7KQpvaOK_Rxw6mbQ_EpiPMKi318";
     let content_length_header = format!("{}", payload.len());
@@ -228,30 +222,35 @@ fn post_request_with_retry(
     loop {
         let mut request = client.post(supabase_url, &headers)?;
 
+        if let Ok(payload_str) = std::str::from_utf8(payload) {
+            info!("Payload: {}", payload_str);
+        } else {
+            info!("Payload is not valid UTF-8");
+        }
+
         request.write_all(payload)?;
         request.flush()?;
 
-        info!("-> POST {}", supabase_url);
+        info!("Posting to {}", supabase_url);
 
         match request.submit() {
             Ok(_) => {
                 info!("Request succeeded");
-                break; // Exit loop if request is successful
+                break;
             }
             Err(e) => {
                 info!("Error sending POST request: {:?}", e);
+
                 if retries >= max_retries {
-                    println!("Max retries exceeded");
-                    return Err(e.into()); // Return the last error after exceeding retries
+                    info!("Max retries exceeded");
+                    return Err(e.into());
                 }
 
-                // Recreate the HTTP client
                 *client = HttpClient::wrap(EspHttpConnection::new(&config)?);
-
                 retries += 1;
-                println!("Retrying... Attempt {}", retries + 1);
-                // Optionally, add a delay here before retrying
-                thread::sleep(Duration::from_secs(2 << retries));
+                info!("Retrying... Attempt {}", retries + 1);
+
+                FreeRtos::delay_ms(5000u32);
             }
         }
     }
@@ -269,7 +268,6 @@ fn connect_wifi(wifi: &mut BlockingWifi<EspWifi<'static>>) -> anyhow::Result<()>
     });
 
     wifi.set_configuration(&wifi_configuration)?;
-
     wifi.start()?;
     info!("Wifi started");
 
@@ -277,7 +275,6 @@ fn connect_wifi(wifi: &mut BlockingWifi<EspWifi<'static>>) -> anyhow::Result<()>
 
     wifi.connect()?;
     info!("Wifi connected");
-
     wifi.wait_netif_up()?;
     info!("Wifi netif up");
 
