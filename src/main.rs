@@ -2,6 +2,8 @@
 //!
 //! Add your own ssid and password
 
+use std::{thread, time::Duration};
+
 use embedded_svc::{
     http::client::Client as HttpClient,
     io::Write,
@@ -9,11 +11,12 @@ use embedded_svc::{
 };
 use esp_idf_hal::prelude::Peripherals;
 use esp_idf_hal::sys::esp_wifi_set_max_tx_power;
-use esp_idf_svc::hal::delay::FreeRtos;
 use esp_idf_svc::http::client::{Configuration as HttpConfiguration, EspHttpConnection};
 use esp_idf_svc::log::EspLogger;
 use esp_idf_svc::wifi::{BlockingWifi, EspWifi};
 use esp_idf_svc::{eventloop::EspSystemEventLoop, nvs::EspDefaultNvsPartition};
+use esp_idf_svc::{hal::delay::FreeRtos, handle::RawHandle};
+use esp_idf_sys::esp_http_client_close;
 // use esp_idf_sys::{self as _}; // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
 use log::info;
 
@@ -44,6 +47,7 @@ fn main() -> anyhow::Result<()> {
         buffer_size: Some(1024),
         buffer_size_tx: Some(1024),
         crt_bundle_attach: Some(esp_idf_svc::sys::esp_crt_bundle_attach),
+        timeout: Some(Duration::from_secs(10)),
         ..Default::default()
     };
 
@@ -88,7 +92,8 @@ fn main() -> anyhow::Result<()> {
             let payload_bytes = payload_str.as_bytes();
 
             // Now `payload_bytes` is ready to be sent with `post_request`
-            post_request(&mut client, payload_bytes)?;
+            // post_request(&mut client, payload_bytes)?;
+            post_request_with_retry(&mut client, payload_bytes, &config)?;
 
             log::info!("Post request sent!");
         }
@@ -97,8 +102,6 @@ fn main() -> anyhow::Result<()> {
         FreeRtos::delay_ms(5000u32);
         // Increment the iteration counter
         iterations += 1;
-
-        log::info!("Iteration: {}", iterations);
 
         // If approximately 5 seconds have passed, break the loop
         // This is based on the assumption that each loop iteration takes roughly 2 seconds
@@ -158,10 +161,11 @@ fn post_request(client: &mut HttpClient<EspHttpConnection>, payload: &[u8]) -> a
 
     request.write_all(payload)?;
     request.flush()?;
-    info!("-> POST {}", supabase_url);
 
     // let response = request.submit()?;
     // let status = response.status();
+
+    info!("-> POST {}", supabase_url);
 
     match request.submit() {
         Ok(response) => {
@@ -172,6 +176,9 @@ fn post_request(client: &mut HttpClient<EspHttpConnection>, payload: &[u8]) -> a
         Err(e) => {
             info!("Error sending POST request: {:?}", e);
             // Depending on the error, you might decide to retry here
+            unsafe {
+                esp_http_client_close(client.raw_connection().unwrap().handle());
+            }
         }
     }
 
@@ -191,6 +198,63 @@ fn post_request(client: &mut HttpClient<EspHttpConnection>, payload: &[u8]) -> a
 
     // Drain any remaining bytes in the response to complete reading
     // while response.read(&mut buf)? > 0 {}
+
+    Ok(())
+}
+
+fn post_request_with_retry(
+    client: &mut HttpClient<EspHttpConnection>,
+    payload: &[u8],
+    config: &HttpConfiguration,
+) -> anyhow::Result<()> {
+    let mut retries = 0;
+    let max_retries = 3; // Maximum number of retries
+
+    let supabase_url = "https://pratqgdulutgohggfwfo.supabase.co/rest/v1/messages";
+    let supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InByYXRxZ2R1bHV0Z29oZ2dmd2ZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MTA0Mjc1NzgsImV4cCI6MjAyNjAwMzU3OH0.miKfZwWualZGbxDZ7KQpvaOK_Rxw6mbQ_EpiPMKi318";
+    let content_length_header = format!("{}", payload.len());
+
+    let headers = [
+        ("apikey", supabase_key),
+        ("Authorization", &format!("Bearer {}", supabase_key)),
+        ("Content-Type", "application/json"),
+        // ("Prefer", "return=representation"),
+        ("Content-Length", &content_length_header),
+    ];
+
+    // let response = request.submit()?;
+    // let status = response.status();
+
+    loop {
+        let mut request = client.post(supabase_url, &headers)?;
+
+        request.write_all(payload)?;
+        request.flush()?;
+
+        info!("-> POST {}", supabase_url);
+
+        match request.submit() {
+            Ok(_) => {
+                info!("Request succeeded");
+                break; // Exit loop if request is successful
+            }
+            Err(e) => {
+                info!("Error sending POST request: {:?}", e);
+                if retries >= max_retries {
+                    println!("Max retries exceeded");
+                    return Err(e.into()); // Return the last error after exceeding retries
+                }
+
+                // Recreate the HTTP client
+                *client = HttpClient::wrap(EspHttpConnection::new(&config)?);
+
+                retries += 1;
+                println!("Retrying... Attempt {}", retries + 1);
+                // Optionally, add a delay here before retrying
+                thread::sleep(Duration::from_secs(2 << retries));
+            }
+        }
+    }
 
     Ok(())
 }
