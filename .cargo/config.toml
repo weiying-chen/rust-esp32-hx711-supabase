@@ -16,3 +16,6 @@ MCU="esp32c3"
 ESP_IDF_VERSION = "v5.1.2"
 WIFI_SSID = "vivo-y72-5g"
 WIFI_PASS = "c@lducho6"
+SUPABASE_URL = "https://pratqgdulutgohggfwfo.supabase.co/rest/v1/messages"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InByYXRxZ2R1bHV0Z29oZ2dmd2ZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MTA0Mjc1NzgsImV4cCI6MjAyNjAwMzU3OH0.miKfZwWualZGbxDZ7KQpvaOK_Rxw6mbQ_EpiPMKi318"
+
