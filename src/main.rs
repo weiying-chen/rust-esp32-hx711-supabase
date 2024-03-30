@@ -60,12 +60,12 @@ fn main() -> anyhow::Result<()> {
             log::info!("Iteration {}", iterations);
 
             let rounded_reading = scale.read_rounded().unwrap();
-            let message = format!("This is a message from ESP32: {} g", rounded_reading);
+            let message = format!("Weight: {} g", rounded_reading);
 
             log::info!("{}", message);
 
             let payload = serde_json::json!({
-                "content": message
+                "reading": message
             });
 
             let payload_str = serde_json::to_string(&payload).unwrap();
