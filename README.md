@@ -12,7 +12,7 @@ Step 4: Create a table in Supabase with the `reading` (text) column.
 
 Step 5: Execute `cargo run` on the command line (to build, flash, and monitor). Note: on Linux, you may have to fix a permission [issue](https://github.com/esp-rs/espflash/blob/main/espflash/README.md#permissions-on-linux).
 
-Step 6: Check your table. You should see the readings there.
+Step 6: Check your Supabase table. You should see the readings there.
 
-Note: make sure your ESP32-C3 is properly powered as Wi-Fi consumes a lot of power.
+Note: Make sure your ESP32-C3 is properly powered as Wi-Fi consumes a lot of power.
 
