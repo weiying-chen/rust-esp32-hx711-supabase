@@ -1,4 +1,4 @@
-# Rust ESP32-C3 HX711 SUPABASE
+# Rust ESP32-C3 HX711 Supabase
 
 Example of using Rust to read the HX711 24-bit analog-to-digital converter and a load cell sensor on an ESP32-C3, then send the readings to [Supabase](https://supabase.com/)
 
